@@ -1,0 +1,292 @@
+<html>
+<script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+
+<script type="module">
+  // If absolute URL from the remote server is provided, configure the CORS
+  // header on that server.
+  var url = '../sample.pdf';
+
+  // Loaded via <script> tag, create shortcut to access PDF.js exports.
+  var { pdfjsLib } = globalThis;
+
+  // The workerSrc property shall be specified.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '//mozilla.github.io/pdf.js/build/pdf.worker.mjs';
+
+  var pdfDoc = null,
+      pageNum = 1,
+      pageRendering = false,
+      pageNumPending = null,
+      scale = 1,
+      canvas = document.getElementById('the-canvas'),
+      ctx = canvas.getContext('2d'),
+      rect = {},
+      backupCanvas = document.createElement("canvas"),
+      viewport = null,
+      drag = false;
+
+  /**
+   * Get page info from document, resize canvas accordingly, and render page.
+   * @param num Page number.
+   */
+  function renderPage(num) {
+    //console.log('iS rendering ? ', pageRendering);
+    if(pageRendering) {
+      pageNumPending = num;
+    }else {
+      pageRendering = true;
+      // Using promise to fetch the page
+      pdfDoc.getPage(num).then(function(page) {
+        viewport = page.getViewport({scale: scale});
+        //console.log('HEight ',viewport.height, ' Width ', viewport.width);
+      // var outputScale = window.devicePixelRatio;
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        // Render PDF page into canvas context
+        var renderContext = {
+        // transform: transform,
+          canvasContext: ctx,
+          viewport: viewport
+        };
+        var renderTask = page.render(renderContext);
+
+        
+        // Wait for rendering to finish
+        renderTask.promise.then(function() {
+          pageRendering = false;
+          // X X Y X (X+RW) X (Y+RH)
+          // L X T X R X B
+          // 2300x1400x0x200
+          // console.log(reduceMarginFromRightX(viewport.width, 2300, 250));  42 ~ 0
+          // console.log(reduceMarginFromBottomY(viewport.height, 1400, 100)); 228 ~ 200
+          // drawRectangle(2300, 1400, 250, 100);
+          // 2300X1620X0X0
+          // console.log(reduceMarginFromRightX(viewport.width, 2400, 150)); 42 ~ 0
+          // console.log(reduceMarginFromBottomY(viewport.height, 1620, 100)); 8 ~ 0
+          // drawRectangle(2400, 1620, 150, 100);
+          if (pageNumPending !== null) {
+            // New page rendering is pending
+            renderPage(pageNumPending);
+            pageNumPending = null;
+          }
+          restoreCanvas();
+        }).catch((err) => {
+          console.log('ERROR');
+          console.log(err);
+        });
+      });
+    }
+   
+
+    // Update page counters
+    document.getElementById('page_num').textContent = num;
+  }
+
+  /**
+   * If another page rendering in progress, waits until the rendering is
+   * finised. Otherwise, executes rendering immediately.
+   */
+  function queueRenderPage(num) {
+    if (pageRendering) {
+      pageNumPending = num;
+    } else {
+      renderPage(num);
+    }
+  }
+
+  /**
+   * Displays previous page.
+   */
+  function onPrevPage() {
+    if (pageNum <= 1) {
+      return;
+    }
+    pageNum--;
+    queueRenderPage(pageNum);
+  }
+  document.getElementById('prev').addEventListener('click', onPrevPage);
+
+  /**
+   * Displays next page.
+   */
+  function onNextPage() {
+    if (pageNum >= pdfDoc.numPages) {
+      return;
+    }
+    pageNum++;
+    queueRenderPage(pageNum);
+  }
+  document.getElementById('next').addEventListener('click', onNextPage);
+
+  /**
+   *  Draw on PDF
+   **/
+  function reduceMarginFromRightX(totalwidth, x, boxWidth = 100) {
+    return totalwidth - (x+boxWidth);
+  }
+
+  function reduceMarginFromBottomY(totalheight, y, boxHeight = 100) {
+    return totalheight - (y+boxHeight);
+  }
+
+
+   function drawRectangle(x, y, w, h) {
+        ctx.strokeStyle = 'red';
+        ctx.strokeRect(x, y, w, h);
+    }
+
+    function storeCanvas() {
+    backupCanvas.width = canvas.width;
+    backupCanvas.height = canvas.height;
+    backupCanvas.ctx = backupCanvas.getContext("2d");
+    backupCanvas.ctx.drawImage(canvas, 0, 0);
+    backupCanvas.ctx.strokeStyle = "red";
+    backupCanvas.ctx.strokeRect(rect.startX, rect.startY, rect.w, rect.h);
+  }
+
+  function restoreCanvas() {
+    ctx.drawImage(backupCanvas, 0, 0);
+  }
+
+
+
+  function handleMouseDown(e) {
+    rect.startX = e.pageX - canvas.offsetLeft;
+    rect.startY = e.pageY - canvas.offsetTop;
+    drag = true;
+}
+
+/*function getMousePos(canvas, evt) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+      X: Math.floor(evt.clientX - rect.left),
+      Y: Math.floor(evt.clientY - rect.top),
+    };
+  }
+
+  function drawLine(line, index) {
+
+      // draw line        
+      ctx.beginPath();
+      ctx.strokeStyle = 'green';
+      ctx.moveTo(line.startX, line.startY);
+      ctx.lineTo(line.endX, line.endY);
+      ctx.closePath();
+      ctx.stroke();
+
+      // add remove mark
+      var top = line.pageY;
+      var left = canvasEl.width + 20;
+      var $a = $("<a href='#' class='w-remove-line'>")
+        .data("line-index", index)
+        .attr("style", "line-height:0")
+        .css({
+          top: top,
+          left: left,
+          position: 'absolute'
+        })
+        .html("x")
+        .click(function() {
+          var index = $(this).data("line-index");
+          $(".w-remove-line").remove();
+          ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+          // restore canvas
+          restoreCanvas();
+          lines.splice(index, 1);
+          for (var i = 0; i < lines.length; i++) {
+            drawLine(lines[i], i);
+          }
+
+        });
+
+      $("body").append($a);
+          
+  }
+*/
+
+
+function handleMouseUp() {
+    drag = false;
+    renderPage(pageNum);
+    console.log('MOUSE UP ===>');
+    console.log('from left => '+rect.startX +' from top => '+ rect.startY+ ' from right => '+reduceMarginFromRightX(viewport.width, rect.startX, rect.w)+ ' from bottom => '+ reduceMarginFromBottomY(viewport.height, rect.startY, rect.h));
+    //updateAreaDisplay();
+}
+
+function handleMouseMove(e) {
+//console.log(e.pageX, e.pageY);
+    if (drag) {
+        const mouseX = e.pageX - canvas.offsetLeft;
+        const mouseY = e.pageY - canvas.offsetTop;
+        //console.log(mouseX, ' <==> ',mouseY);
+        const width = mouseX - rect.startX;
+        const height = mouseY - rect.startY;
+        //const sideLength = Math.min(Math.abs(width), Math.abs(height));
+
+        rect.w = width < 0 ? -width : width;
+        rect.h = height < 0 ? -height : height;
+
+        //console.log(rect.w, rect.h);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        renderPage(pageNum);
+        storeCanvas();
+        ctx.strokeStyle = "red";
+        ctx.strokeRect(rect.startX, rect.startY, rect.w, rect.h);
+        
+        /*var mousePos = getMousePos(canvasEl, e);
+        var line = {
+          startX: 0,
+          startY: mouseY+(abs(rect.h/2)),
+          endX: mouseX,
+          endY: mouseY+(abs(rect.h/2)),
+          pageY: e.pageY
+        };
+        lines.push(line);
+        drawLine(line, lines.length - 1);*/
+    }
+}
+
+function updateAreaDisplay() {
+    const area = rect.w * rect.h;
+    document.getElementById('the-canvas').textContent = area.toString();
+}
+
+canvas.addEventListener('mousedown', handleMouseDown, false);
+canvas.addEventListener('mouseup', handleMouseUp, false);
+canvas.addEventListener('mousemove', handleMouseMove, false);
+
+
+
+  /**
+   * Asynchronously downloads PDF.
+   */
+  pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
+    pdfDoc = pdfDoc_;
+    document.getElementById('page_count').textContent = pdfDoc.numPages;
+
+    // Initial/first page rendering
+    renderPage(pageNum);
+  });
+</script>
+<style>/*
+    #the-canvas {
+        border: 1px solid black;
+        direction: ltr;
+    }*/
+    body {
+      margin: 0;
+    }
+</style>
+<body>
+<div style="display: none;">
+  <button id="prev">Previous</button>
+  <button id="next">Next</button>
+  &nbsp; &nbsp;
+  <span>Page: <span id="page_num"></span> / <span id="page_count"></span></span>
+</div>
+
+<canvas id="the-canvas"></canvas>
+</body>
+</html>
+
