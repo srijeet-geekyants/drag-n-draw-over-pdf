@@ -209,6 +209,7 @@ function handleMouseUp() {
     drag = false;
     renderPage(pageNum);
     console.log('MOUSE UP ===>');
+    document.getElementById('coords').innerHTML = 'from left => '+rect.startX +' from top => '+ rect.startY+ ' from right => '+reduceMarginFromRightX(viewport.width, rect.startX, rect.w)+ ' from bottom => '+ reduceMarginFromBottomY(viewport.height, rect.startY, rect.h);
     console.log('from left => '+rect.startX +' from top => '+ rect.startY+ ' from right => '+reduceMarginFromRightX(viewport.width, rect.startX, rect.w)+ ' from bottom => '+ reduceMarginFromBottomY(viewport.height, rect.startY, rect.h));
     //updateAreaDisplay();
 }
@@ -279,11 +280,12 @@ canvas.addEventListener('mousemove', handleMouseMove, false);
     }
 </style>
 <body>
-<div style="position:absolute; z-index:9999;">
+<div style="position:fixed; z-index:9999;">
   <button id="prev">Previous</button>
   <button id="next">Next</button>
   &nbsp; &nbsp;
   <span>Page: <span id="page_num"></span> / <span id="page_count"></span></span>
+  <span id="coords" style="display:block; background: green; color: white;"></span>
 </div>
 
 <canvas id="the-canvas"></canvas>
